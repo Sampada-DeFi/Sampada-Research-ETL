@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"compress/gzip"
 	"context"
 	"encoding/csv"
@@ -11,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 
@@ -62,28 +64,18 @@ func GetRequestSEC(c *RLHTTPClient, userAgent string, url string) (io.ReadCloser
 func main() {
 	ratelimiter := rate.NewLimiter(10, 10)
 	c := NewClient(ratelimiter)
-	// fmt.Println("Please enter in your Google Cloud project name: ")
-	// var projectName string
-	// fmt.Scanln(&projectName)
-	// fmt.Println("Please enter in your Google Cloud Storage bucket name: ")
-	// var bucketName string
-	// fmt.Scanln(&bucketName)
-	// fmt.Println("Please enter in your user agent in the form of (SampleCompanyName AdminContact@<sample company domain>.com) to use in your request header to the SEC")
-	// var userAgent string
-	// scanner := bufio.NewScanner(os.Stdin)
-	// if scanner.Scan() {
-	// 	userAgent = scanner.Text()
-	// }
-
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
-	projectName := "sampada-research"
-	bucketName := "sampada-research"
-	userAgent := "Sampada-DeFi akoganti@sampada.io"
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
-	//MAKE SURE TO DELETE BEFORE MERGING TO GITHUB!!!!!!!!!!!!!
+	fmt.Println("Please enter in your Google Cloud project name: ")
+	var projectName string
+	fmt.Scanln(&projectName)
+	fmt.Println("Please enter in your Google Cloud Storage bucket name: ")
+	var bucketName string
+	fmt.Scanln(&bucketName)
+	fmt.Println("Please enter in your user agent in the form of (SampleCompanyName AdminContact@<sample company domain>.com) to use in your request header to the SEC")
+	var userAgent string
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		userAgent = scanner.Text()
+	}
 
 	indexURL := "https://www.sec.gov/Archives/edgar/full-index/"
 	resp, yearsJSON := GetRequestSEC(c, userAgent, indexURL+"index.json")
