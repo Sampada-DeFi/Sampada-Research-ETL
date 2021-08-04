@@ -78,6 +78,7 @@ type BalanceSheetItem struct {
 	DataType    string
 	BalanceType string
 	PeriodType  string
+	Footnote    string
 }
 
 type IncomeOrCashFlowStatementItem struct {
@@ -138,22 +139,19 @@ func ParseFilingSummary(filingSummaryObject FilingSummary, filingDirectoryIndexU
 }
 
 func ParseBalanceSheet(balanceSheet []byte, year string, qtr string, cik string) []BalanceSheetItem {
+
+	//turn balance sheet into soup object for parsing
 	doc := soup.HTMLParse(string(balanceSheet))
 
-	//checking to see if footnotes exist
-	foundFootnotes := doc.Find("table", "class", "outerFootnotes").Error
-	if foundFootnotes == nil {
-		fmt.Println("Footnotes found")
-	} else {
-		fmt.Println("Footnotes not found: ", foundFootnotes)
-
-	}
-
+	//variables to store data and control flow
 	columnHeadersFound := false
 	var axes, abstracts, tags, definitions, dataTypes, balanceTypes, periodTypes, items, dates, footnotes []string
 	var values [][]string
 	axis, abstract, title := "", "", ""
 	rows := doc.Find("table").FindAll("tr")
+
+	//iterating over rows in balance sheet
+RowLoop:
 	for _, row := range rows {
 		if !columnHeadersFound {
 			for _, columnHeader := range row.FindAll("th") {
@@ -166,65 +164,42 @@ func ParseBalanceSheet(balanceSheet []byte, year string, qtr string, cik string)
 			}
 			columnHeadersFound = true
 			values = make([][]string, len(dates))
-			fmt.Println(title, dates, values)
+			//fmt.Println(title, dates, values)
 			continue
 		}
 		index := 0
+		//iterating over cells in row
 		for _, value := range row.FindAll("td") {
+			//each td tag has a tag that corresponds with some type of data that is consistent across all xbrl statements on the sec from what I've seen
 			switch class := value.Attrs()["class"]; class {
 			case "pl ", "pl custom":
 				xbrlTag := strings.Replace(strings.Replace(value.Find("a").Attrs()["onclick"], "top.Show.showAR( this, '", "", 1), "', window );", "", 1)
 				if strings.Contains(xbrlTag, "Axis") {
 					axis = xbrlTag
-					break
+					continue RowLoop
 				}
 				if strings.Contains(xbrlTag, "Abstract") {
 					abstract = xbrlTag
-					break
+					continue RowLoop
 				}
-				// fmt.Println(value.FullText(), xbrlTag)
 				items = append(items, value.FullText())
 				tags = append(tags, xbrlTag)
 				axes = append(axes, axis)
 				abstracts = append(abstracts, abstract)
 			case "nump", "num", "text":
 				values[index] = append(values[index], value.FullText())
-				// fmt.Println(value.FullText())
 				index = index + 1
-			}
-
-			if value.Attrs()["class"] == "pl " || value.Attrs()["class"] == "pl custom" {
-				xbrlTag := strings.Replace(strings.Replace(value.Find("a").Attrs()["onclick"], "top.Show.showAR( this, '", "", 1), "', window );", "", 1)
-				if strings.Contains(xbrlTag, "Axis") {
-					axis = xbrlTag
-					break
-				}
-				if strings.Contains(xbrlTag, "Abstract") {
-					abstract = xbrlTag
-					break
-				}
-				// fmt.Println(value.FullText(), xbrlTag)
-				items = append(items, value.FullText())
-				tags = append(tags, xbrlTag)
-				axes = append(axes, axis)
-				abstracts = append(abstracts, abstract)
-				continue
-			}
-			if value.Attrs()["class"] == "nump" || value.Attrs()["class"] == "num" || value.Attrs()["class"] == "text" {
-				values[index] = append(values[index], value.FullText())
-				// fmt.Println(value.FullText())
-				index = index + 1
-				continue
-			}
-			if value.Attrs()["class"] == "th" {
+			case "th":
 				footnotes = append(footnotes, value.FullText())
-				continue
-			}
-			if value.Find("table").Error != nil {
-				fmt.Println("Some empty row probably, couldn't find footnote just yet")
 			}
 		}
 	}
+	// fmt.Println(values)
+	// fmt.Println(tags)
+	// fmt.Println(items)
+	// fmt.Println(tags)
+	// fmt.Println(axes)
+	// fmt.Println(abstracts)
 
 	for _, tag := range tags {
 		div := doc.Find("table", "id", tag).Find("tr").FindNextElementSibling().Find("div", "class", "body")
@@ -234,12 +209,36 @@ func ParseBalanceSheet(balanceSheet []byte, year string, qtr string, cik string)
 		periodTypes = append(periodTypes, div.FindAll("div")[2].FindAll("tr")[4].FindAll("td")[1].Text())
 	}
 
-	fmt.Println(len(dates), len(items), len(values), len(values[1]), len(axes), len(abstracts), len(tags), len(definitions), len(dataTypes), len(balanceTypes), len(periodTypes))
+	foundFootnotes := false
+	//checking to see if footnotes exist
+	footnotesTable := doc.Find("table", "class", "outerFootnotes").Error
+	if footnotesTable == nil {
+		fmt.Println("Footnotes found")
+		foundFootnotes = true
+	} else {
+		fmt.Println("Footnotes not found: ", footnotesTable)
+	}
+
+	//need to get footnotes somehow
+	if foundFootnotes {
+		for index, footnoteNum := range footnotes {
+			for _, footnote := range doc.Find("table", "class", "outerFootnotes").FindAll("tr") {
+				if footnote.Find("td").FullText() == footnoteNum {
+					// fmt.Println(footnote.Find("td").FullText())
+					// fmt.Println(footnote.Find("td").FindNextElementSibling().FullText())
+					footnotes[index] = footnote.Find("td").FindNextElementSibling().FullText()
+				}
+			}
+		}
+	} else {
+		footnotes = make([]string, len(items))
+	}
 	fmt.Println(footnotes)
+	// fmt.Println(len(dates), len(items), len(values), len(values[1]), len(axes), len(abstracts), len(tags), len(definitions), len(dataTypes), len(balanceTypes), len(periodTypes), len(footnotes))
 	var balanceSheetRows []BalanceSheetItem
 	for ii := range dates {
 		for i := range items {
-			balanceSheetRow := BalanceSheetItem{Year: year, Quarter: qtr, CIK: cik, Title: title, Date: dates[ii], Item: items[i], Value: values[ii][i], Axis: axes[i], Abstract: abstracts[i], Tag: tags[i], Definition: definitions[i], DataType: dataTypes[i], BalanceType: balanceTypes[i], PeriodType: periodTypes[i]}
+			balanceSheetRow := BalanceSheetItem{Year: year, Quarter: qtr, CIK: cik, Title: title, Date: dates[ii], Item: items[i], Value: values[ii][i], Axis: axes[i], Abstract: abstracts[i], Tag: tags[i], Definition: definitions[i], DataType: dataTypes[i], BalanceType: balanceTypes[i], PeriodType: periodTypes[i], Footnote: footnotes[i]}
 			balanceSheetRows = append(balanceSheetRows, balanceSheetRow)
 		}
 	}
@@ -247,7 +246,11 @@ func ParseBalanceSheet(balanceSheet []byte, year string, qtr string, cik string)
 }
 
 func ParseIncomeOrCashFlowStatement(incomeOrCashFlowStatement []byte, year string, qtr string, cik string) []IncomeOrCashFlowStatementItem {
+
+	//soup object to traverse html document
 	doc := soup.HTMLParse(string(incomeOrCashFlowStatement))
+
+	//variables and arrays to store data and control flow
 	columnHeadersFound := false
 	datesFound := false
 	var columnHeaders, axes, abstracts, tags, definitions, dataTypes, balanceTypes, periodTypes, items []string
@@ -255,7 +258,9 @@ func ParseIncomeOrCashFlowStatement(incomeOrCashFlowStatement []byte, year strin
 	var dates []string
 	axis, abstract, title, duration := "", "", "", ""
 	rows := doc.Find("table").FindAll("tr")
+	//iterate over all financial statement rows
 	for _, row := range rows {
+		//Getting title and time period of income/cash flow statement
 		if !columnHeadersFound {
 			for _, columnHeader := range row.FindAll("th") {
 				columnHeaders = append(columnHeaders, columnHeader.FullText())

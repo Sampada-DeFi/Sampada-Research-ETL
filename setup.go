@@ -159,15 +159,11 @@ func main() {
 						}
 					}
 
-					j := 1
+					j := 20
 					//Loop through filings
 					for i := range financialStatementsList {
 						financialStatementsLoc := financialStatementsList[i][4]
 						cik := financialStatementsList[i][0]
-
-						if i < j {
-							continue
-						}
 
 						if i > j {
 							break
@@ -216,38 +212,38 @@ func main() {
 						resp.Close()
 						balanceSheetHTML.Close()
 						fmt.Println("Balance Sheet Parsed")
-						// //Parse Income Statement
-						// fmt.Println(incomeStatementURL)
-						// resp, incomeStatementHTML := GetRequestSEC(c, userAgent, incomeStatementURL)
-						// incomeStatement, _ := io.ReadAll(incomeStatementHTML)
-						// incomeStatementRows := ParseIncomeOrCashFlowStatement(incomeStatement, year, qtr, cik)
-						// resp.Close()
-						// incomeStatementHTML.Close()
-						// fmt.Println("Income Statement Parsed")
-						// //Parse Cash Flow Statement
-						// fmt.Println(cashFlowStatementURL)
-						// resp, cashFlowStatementHTML := GetRequestSEC(c, userAgent, cashFlowStatementURL)
-						// cashFlowStatement, _ := io.ReadAll(cashFlowStatementHTML)
-						// cashFlowStatementRows := ParseIncomeOrCashFlowStatement(cashFlowStatement, year, qtr, cik)
-						// resp.Close()
-						// cashFlowStatementHTML.Close()
-						// fmt.Println("Cash Flow Statement Parsed")
+						//Parse Income Statement
+						fmt.Println(incomeStatementURL)
+						resp, incomeStatementHTML := GetRequestSEC(c, userAgent, incomeStatementURL)
+						incomeStatement, _ := io.ReadAll(incomeStatementHTML)
+						incomeStatementRows := ParseIncomeOrCashFlowStatement(incomeStatement, year, qtr, cik)
+						resp.Close()
+						incomeStatementHTML.Close()
+						fmt.Println("Income Statement Parsed")
+						//Parse Cash Flow Statement
+						fmt.Println(cashFlowStatementURL)
+						resp, cashFlowStatementHTML := GetRequestSEC(c, userAgent, cashFlowStatementURL)
+						cashFlowStatement, _ := io.ReadAll(cashFlowStatementHTML)
+						cashFlowStatementRows := ParseIncomeOrCashFlowStatement(cashFlowStatement, year, qtr, cik)
+						resp.Close()
+						cashFlowStatementHTML.Close()
+						fmt.Println("Cash Flow Statement Parsed")
 						//Upload financial data to BigQuery
 						balanceSheetInserter := balanceSheetTable.Inserter()
 						if err := balanceSheetInserter.Put(ctx, balanceSheetRows); err != nil {
 							fmt.Println("Can't upload data balance sheet")
 							log.Fatal(err)
 						}
-						// incomeStatementInserter := incomeStatementTable.Inserter()
-						// if err := incomeStatementInserter.Put(ctx, incomeStatementRows); err != nil {
-						// 	fmt.Println("Can't upload data income statement")
-						// 	log.Fatal(err)
-						// }
-						// cashFlowStatementInserter := cashFlowStatementTable.Inserter()
-						// if err := cashFlowStatementInserter.Put(ctx, cashFlowStatementRows); err != nil {
-						// 	fmt.Println("Can't upload data cash flow statement")
-						// 	log.Fatal(err)
-						// }
+						incomeStatementInserter := incomeStatementTable.Inserter()
+						if err := incomeStatementInserter.Put(ctx, incomeStatementRows); err != nil {
+							fmt.Println("Can't upload data income statement")
+							log.Fatal(err)
+						}
+						cashFlowStatementInserter := cashFlowStatementTable.Inserter()
+						if err := cashFlowStatementInserter.Put(ctx, cashFlowStatementRows); err != nil {
+							fmt.Println("Can't upload data cash flow statement")
+							log.Fatal(err)
+						}
 					}
 				}
 			}
