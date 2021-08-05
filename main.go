@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"cloud.google.com/go/bigquery"
-	"cloud.google.com/go/storage"
 	"golang.org/x/time/rate"
 )
 
@@ -128,18 +127,18 @@ func main() {
 					resp.Close()
 					xbrlList.Close()
 
-					//Save xbrl filings list file to Google Cloud Storage
-					ctx := context.Background()
-					client, _ := storage.NewClient(ctx)
-					defer client.Close()
-					bkt := client.Bucket(bucketName)
-					xbrlListObjectWriter := bkt.Object("SEC/" + year + "/" + qtr + "/xbrl.gz").NewWriter(ctx)
-					if _, err := xbrlListObjectWriter.Write(body); err != nil {
-						log.Fatal(err)
-					}
-					if err := xbrlListObjectWriter.Close(); err != nil {
-						log.Fatal(err)
-					}
+					// //Save xbrl filings list file to Google Cloud Storage
+					// ctx := context.Background()
+					// client, _ := storage.NewClient(ctx)
+					// defer client.Close()
+					// bkt := client.Bucket(bucketName)
+					// xbrlListObjectWriter := bkt.Object("SEC/" + year + "/" + qtr + "/xbrl.gz").NewWriter(ctx)
+					// if _, err := xbrlListObjectWriter.Write(body); err != nil {
+					// 	log.Fatal(err)
+					// }
+					// if err := xbrlListObjectWriter.Close(); err != nil {
+					// 	log.Fatal(err)
+					// }
 
 					//Filter list for 10-Q and 10-K forms
 					pattern := regexp.MustCompile(`---*`)
@@ -169,24 +168,24 @@ func main() {
 							break
 						}
 
-						//Save whole filing in txt file to google cloud storage
-						completeFilingURL := "https://www.sec.gov/Archives/" + financialStatementsLoc
-						resp, filingTextFile := GetRequestSEC(c, userAgent, completeFilingURL)
-						body, _ = ioutil.ReadAll(filingTextFile)
-						resp.Close()
-						xbrlList.Close()
-						editedFilingLoc := strings.Replace(financialStatementsLoc, "edgar/data/", "", 1)
-						pattern = regexp.MustCompile(`\d+\/`)
-						loc = pattern.FindIndex([]byte(editedFilingLoc))
-						filename := editedFilingLoc[loc[1]:]
-						accessionNum := strings.Replace(strings.Replace(filename, "-", "", 2), ".txt", "", 1)
-						filingTextFileObjectWriter := bkt.Object("SEC/" + year + "/" + qtr + "/" + accessionNum + "/" + filename).NewWriter(ctx)
-						if _, err := filingTextFileObjectWriter.Write(body); err != nil {
-							log.Fatal(err)
-						}
-						if err := filingTextFileObjectWriter.Close(); err != nil {
-							log.Fatal(err)
-						}
+						// //Save whole filing in txt file to google cloud storage
+						// completeFilingURL := "https://www.sec.gov/Archives/" + financialStatementsLoc
+						// resp, filingTextFile := GetRequestSEC(c, userAgent, completeFilingURL)
+						// body, _ = ioutil.ReadAll(filingTextFile)
+						// resp.Close()
+						// xbrlList.Close()
+						// editedFilingLoc := strings.Replace(financialStatementsLoc, "edgar/data/", "", 1)
+						// pattern = regexp.MustCompile(`\d+\/`)
+						// loc = pattern.FindIndex([]byte(editedFilingLoc))
+						// filename := editedFilingLoc[loc[1]:]
+						// accessionNum := strings.Replace(strings.Replace(filename, "-", "", 2), ".txt", "", 1)
+						// filingTextFileObjectWriter := bkt.Object("SEC/" + year + "/" + qtr + "/" + accessionNum + "/" + filename).NewWriter(ctx)
+						// if _, err := filingTextFileObjectWriter.Write(body); err != nil {
+						// 	log.Fatal(err)
+						// }
+						// if err := filingTextFileObjectWriter.Close(); err != nil {
+						// 	log.Fatal(err)
+						// }
 
 						//Find xbrl formatted balance sheet, income statement, and cash flow statement in Filing Summary
 						filingDirectoryIndexURL := "https://www.sec.gov/Archives/" + strings.Replace(strings.Replace(financialStatementsLoc, "-", "", 2), ".txt", "", 1)
@@ -205,13 +204,13 @@ func main() {
 
 						//Parse Balance Sheet
 						fmt.Println(balanceSheetURL, incomeStatementURL, cashFlowStatementURL)
-						resp, balanceSheetHTML := GetRequestSEC(c, userAgent, balanceSheetURL)
-						balanceSheet, _ := io.ReadAll(balanceSheetHTML)
-						balanceSheetRows := ParseBalanceSheet(balanceSheet, year, qtr, cik)
-						// fmt.Println(balanceSheetRows)
-						resp.Close()
-						balanceSheetHTML.Close()
-						fmt.Println("Balance Sheet Parsed")
+						// resp, balanceSheetHTML := GetRequestSEC(c, userAgent, balanceSheetURL)
+						// balanceSheet, _ := io.ReadAll(balanceSheetHTML)
+						// balanceSheetRows := ParseBalanceSheet(balanceSheet, year, qtr, cik)
+						// // fmt.Println(balanceSheetRows)
+						// resp.Close()
+						// balanceSheetHTML.Close()
+						// fmt.Println("Balance Sheet Parsed")
 						//Parse Income Statement
 						fmt.Println(incomeStatementURL)
 						resp, incomeStatementHTML := GetRequestSEC(c, userAgent, incomeStatementURL)
@@ -228,12 +227,12 @@ func main() {
 						resp.Close()
 						cashFlowStatementHTML.Close()
 						fmt.Println("Cash Flow Statement Parsed")
-						//Upload financial data to BigQuery
-						balanceSheetInserter := balanceSheetTable.Inserter()
-						if err := balanceSheetInserter.Put(ctx, balanceSheetRows); err != nil {
-							fmt.Println("Can't upload data balance sheet")
-							log.Fatal(err)
-						}
+						// //Upload financial data to BigQuery
+						// balanceSheetInserter := balanceSheetTable.Inserter()
+						// if err := balanceSheetInserter.Put(ctx, balanceSheetRows); err != nil {
+						// 	fmt.Println("Can't upload data balance sheet")
+						// 	log.Fatal(err)
+						// }
 						incomeStatementInserter := incomeStatementTable.Inserter()
 						if err := incomeStatementInserter.Put(ctx, incomeStatementRows); err != nil {
 							fmt.Println("Can't upload data income statement")

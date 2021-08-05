@@ -97,6 +97,7 @@ type IncomeOrCashFlowStatementItem struct {
 	DataType    string
 	BalanceType string
 	PeriodType  string
+	Footnote    string
 }
 
 func ParseFilingSummary(filingSummaryObject FilingSummary, filingDirectoryIndexURL string) (string, string, string) {
@@ -151,7 +152,7 @@ func ParseBalanceSheet(balanceSheet []byte, year string, qtr string, cik string)
 	rows := doc.Find("table").FindAll("tr")
 
 	//iterating over rows in balance sheet
-RowLoop:
+RowLoopBS:
 	for _, row := range rows {
 		if !columnHeadersFound {
 			for _, columnHeader := range row.FindAll("th") {
@@ -176,11 +177,11 @@ RowLoop:
 				xbrlTag := strings.Replace(strings.Replace(value.Find("a").Attrs()["onclick"], "top.Show.showAR( this, '", "", 1), "', window );", "", 1)
 				if strings.Contains(xbrlTag, "Axis") {
 					axis = xbrlTag
-					continue RowLoop
+					continue RowLoopBS
 				}
 				if strings.Contains(xbrlTag, "Abstract") {
 					abstract = xbrlTag
-					continue RowLoop
+					continue RowLoopBS
 				}
 				items = append(items, value.FullText())
 				tags = append(tags, xbrlTag)
@@ -251,23 +252,31 @@ func ParseIncomeOrCashFlowStatement(incomeOrCashFlowStatement []byte, year strin
 	doc := soup.HTMLParse(string(incomeOrCashFlowStatement))
 
 	//variables and arrays to store data and control flow
-	columnHeadersFound := false
+	columnHeadersFound, multipleColumnFootnotesExist := false, false
 	datesFound := false
-	var columnHeaders, axes, abstracts, tags, definitions, dataTypes, balanceTypes, periodTypes, items []string
+	var axes, abstracts, tags, definitions, dataTypes, balanceTypes, periodTypes, items, footnotes []string
 	var values [][]string
+	var multipleColumnFootnotes [][]string
 	var dates []string
+	var details []soup.Root
 	axis, abstract, title, duration := "", "", "", ""
 	rows := doc.Find("table").FindAll("tr")
+
 	//iterate over all financial statement rows
+RowloopICFS:
 	for _, row := range rows {
+
 		//Getting title and time period of income/cash flow statement
 		if !columnHeadersFound {
 			for _, columnHeader := range row.FindAll("th") {
-				columnHeaders = append(columnHeaders, columnHeader.FullText())
+				if columnHeader.Attrs()["class"] == "tl" {
+					title = columnHeader.FullText()
+				}
+				if columnHeader.Attrs()["class"] == "th" {
+					duration = columnHeader.FullText()
+				}
 			}
 			columnHeadersFound = true
-			title = columnHeaders[0]
-			duration = columnHeaders[1]
 			continue
 		}
 		if !datesFound {
@@ -275,67 +284,116 @@ func ParseIncomeOrCashFlowStatement(incomeOrCashFlowStatement []byte, year strin
 				dates = append(dates, date.FullText())
 			}
 			values = make([][]string, len(dates))
+			multipleColumnFootnotes = make([][]string, len(dates))
 			datesFound = true
 			fmt.Println(title, dates, values)
 			continue
 		}
-		possibleXBRLTag := row.Find("td").Find("a")
-		if possibleXBRLTag.Error != nil {
-			fmt.Println(possibleXBRLTag.Error)
-			continue
-		}
-		xbrlTag := strings.Replace(strings.Replace(possibleXBRLTag.Attrs()["onclick"], "top.Show.showAR( this, '", "", 1), "', window );", "", 1)
-		fmt.Println(xbrlTag)
-		if strings.Contains(xbrlTag, "Axis") {
-			axis = xbrlTag
-			continue
-		}
-		if strings.Contains(xbrlTag, "Abstract") {
-			abstract = xbrlTag
-			continue
-		}
+		footnoteColumnIndex := 0
 		index := 0
+		//iterating over cells in row
 		for _, value := range row.FindAll("td") {
-			if value.Attrs()["class"] == "pl" {
+			//each td tag has a tag that corresponds with some type of data that is consistent across all xbrl statements on the sec from what I've seen
+			switch class := value.Attrs()["class"]; class {
+			case "pl ", "pl custom":
+				xbrlTag := strings.Replace(strings.Replace(value.Find("a").Attrs()["onclick"], "top.Show.showAR( this, '", "", 1), "', window );", "", 1)
+				if strings.Contains(xbrlTag, "Axis") {
+					axis = xbrlTag
+					continue RowloopICFS
+				}
+				if strings.Contains(xbrlTag, "Abstract") {
+					abstract = xbrlTag
+					continue RowloopICFS
+				}
 				items = append(items, value.FullText())
-				fmt.Println(value.FullText())
-				continue
-			}
-			if value.Attrs()["class"] == "th" {
-				continue
-			}
-			if value.Attrs()["class"] == "nump" {
+				tags = append(tags, xbrlTag)
+				axes = append(axes, axis)
+				abstracts = append(abstracts, abstract)
+			case "nump", "num", "text":
 				values[index] = append(values[index], value.FullText())
 				index = index + 1
-				continue
-			}
-			if value.Attrs()["class"] == "text" {
-				values[index] = append(values[index], value.FullText())
+			case "th":
+				footnotes = append(footnotes, value.FullText())
+			case "fn":
+				multipleColumnFootnotesExist = true
+				if multipleColumnFootnotesExist {
+					fmt.Println("I'm going to kill myself")
+				}
+				multipleColumnFootnotes[footnoteColumnIndex] = append(multipleColumnFootnotes[footnoteColumnIndex], value.FullText())
 				index = index + 1
-				continue
-			}
-			footnote := value.Find("table")
-			if footnote.Error != nil {
-				fmt.Println(footnote.Error)
 			}
 		}
-		axes = append(axes, axis)
-		abstracts = append(abstracts, abstract)
-		tags = append(tags, xbrlTag)
 	}
 
+	fmt.Println(tags)
+
 	for _, tag := range tags {
+		fmt.Println(tag)
 		div := doc.Find("table", "id", tag).Find("tr").FindNextElementSibling().Find("div", "class", "body")
 		definitions = append(definitions, div.Find("div").Find("p").Text())
-		dataTypes = append(dataTypes, div.FindAll("div")[2].FindAll("tr")[2].FindAll("td")[1].Text())
-		balanceTypes = append(balanceTypes, div.FindAll("div")[2].FindAll("tr")[3].FindAll("td")[1].Text())
-		periodTypes = append(periodTypes, div.FindAll("div")[2].FindAll("tr")[4].FindAll("td")[1].Text())
+		fmt.Println()
+		fmt.Println()
+		for _, div := range div.FindAll("div") {
+			if div.FindPrevElementSibling().FullText() == "+ Details" {
+				details = div.FindAll("tr")
+			}
+		}
+		dataTypes = append(dataTypes, details[2].FindAll("td")[1].Text())
+		balanceTypes = append(balanceTypes, details[3].FindAll("td")[1].Text())
+		periodTypes = append(periodTypes, details[4].FindAll("td")[1].Text())
 	}
+
+	foundFootnotes := false
+	//checking to see if footnotes exist
+	footnotesTable := doc.Find("table", "class", "outerFootnotes")
+	if footnotesTable.Error == nil {
+		fmt.Println("Footnotes found")
+		fmt.Println(footnotesTable.FullText())
+		foundFootnotes = true
+	} else {
+		fmt.Println("Footnotes not found: ", footnotesTable)
+	}
+
+	//need to get footnotes somehow
+	if foundFootnotes {
+		for index, footnoteNum := range footnotes {
+			for _, footnote := range doc.Find("table", "class", "outerFootnotes").FindAll("tr") {
+				footnotesDescription := ""
+				for _, footnoteData := range footnote.FindAll("td") {
+					if footnoteData.FullText() == footnoteNum {
+						continue
+					}
+					footnotesDescription = footnotesDescription + footnoteData.FullText()
+				}
+				footnotes[index] = footnotesDescription
+				// td := footnote.Find("td")
+				// if td.FullText() == footnoteNum {
+				// 	fmt.Println(td.FullText())
+				// 	// fmt.Println(footnote.Find("td").FullText())
+				// 	// fmt.Println(footnote.Find("td").FindNextElementSibling().FullText())
+				// 	footnotes[index] = td.FindNextElementSibling().FullText()
+				// }
+			}
+		}
+	} else {
+		footnotes = make([]string, len(items))
+	}
+	fmt.Println(len(dates), len(items), len(values), len(values[1]), len(axes), len(abstracts), len(tags), len(definitions), len(dataTypes), len(balanceTypes), len(periodTypes), len(footnotes))
 	var incomeOrCashFlowStatementRows []IncomeOrCashFlowStatementItem
-	for ii := range dates {
-		for i := range items {
-			incomeOrCashFlowStatementRow := IncomeOrCashFlowStatementItem{Year: year, Quarter: qtr, CIK: cik, Title: title, Date: dates[ii], Item: items[i], Value: values[ii][i], Duration: duration, Axis: axes[i], Abstract: abstracts[i], Tag: tags[i], Definition: definitions[i], DataType: dataTypes[i], BalanceType: balanceTypes[i], PeriodType: periodTypes[i]}
-			incomeOrCashFlowStatementRows = append(incomeOrCashFlowStatementRows, incomeOrCashFlowStatementRow)
+	if multipleColumnFootnotesExist {
+		fmt.Println("gotta handle this shit")
+		for ii := range dates {
+			for i := range items {
+				incomeOrCashFlowStatementRow := IncomeOrCashFlowStatementItem{Year: year, Quarter: qtr, CIK: cik, Title: title, Date: dates[ii], Item: items[i], Value: values[ii][i], Duration: duration, Axis: axes[i], Abstract: abstracts[i], Tag: tags[i], Definition: definitions[i], DataType: dataTypes[i], BalanceType: balanceTypes[i], PeriodType: periodTypes[i], Footnote: multipleColumnFootnotes[ii][i]}
+				incomeOrCashFlowStatementRows = append(incomeOrCashFlowStatementRows, incomeOrCashFlowStatementRow)
+			}
+		}
+	} else {
+		for ii := range dates {
+			for i := range items {
+				incomeOrCashFlowStatementRow := IncomeOrCashFlowStatementItem{Year: year, Quarter: qtr, CIK: cik, Title: title, Date: dates[ii], Item: items[i], Value: values[ii][i], Duration: duration, Axis: axes[i], Abstract: abstracts[i], Tag: tags[i], Definition: definitions[i], DataType: dataTypes[i], BalanceType: balanceTypes[i], PeriodType: periodTypes[i], Footnote: footnotes[i]}
+				incomeOrCashFlowStatementRows = append(incomeOrCashFlowStatementRows, incomeOrCashFlowStatementRow)
+			}
 		}
 	}
 	return incomeOrCashFlowStatementRows
